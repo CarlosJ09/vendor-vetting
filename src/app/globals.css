@@ -1,0 +1,53 @@
+@import "tailwindcss";
+
+/*
+ * A small token set rather than utility colours scattered through the markup.
+ * Status colours in particular need to mean the same thing on every screen: a
+ * `warn` that is amber in one table and orange in another reads as two states.
+ */
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+  --muted: #6b7280;
+  --surface: #f9fafb;
+  --border: #e5e7eb;
+
+  --pass: #15803d;
+  --pass-bg: #dcfce7;
+  --warn: #a16207;
+  --warn-bg: #fef9c3;
+  --fail: #b91c1c;
+  --fail-bg: #fee2e2;
+  --review: #6d28d9;
+  --review-bg: #ede9fe;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+    --muted: #9ca3af;
+    --surface: #141414;
+    --border: #262626;
+
+    --pass: #4ade80;
+    --pass-bg: #052e16;
+    --warn: #fcd34d;
+    --warn-bg: #422006;
+    --fail: #f87171;
+    --fail-bg: #450a0a;
+    --review: #c4b5fd;
+    --review-bg: #2e1065;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
