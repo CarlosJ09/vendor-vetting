@@ -1,0 +1,26 @@
+# Local Postgres for development.
+#
+# Port 5433 on the host, not 5432, so this does not collide with an existing
+# local Postgres install. Credentials are deliberately trivial: this database
+# holds only synthetic documents and never leaves the machine.
+services: 
+  postgres:
+    image: postgres:16-alpine
+    container_name: vendor-vetting-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: vetting
+      POSTGRES_PASSWORD: vetting
+      POSTGRES_DB: vendor_vetting
+    ports:
+      - "5433:5432"
+    volumes:
+      - vendor-vetting-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vetting -d vendor_vetting"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  vendor-vetting-pgdata:

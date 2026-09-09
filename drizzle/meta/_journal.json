@@ -1,0 +1,20 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1787068277836,
+      "tag": "0000_spotty_mother_askani",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788919969279,
+      "tag": "0001_document_content",
+      "breakpoints": true
+    }
+  ]
+}
