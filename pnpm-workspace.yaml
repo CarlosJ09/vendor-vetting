@@ -1,0 +1,9 @@
+# Build scripts are blocked by default in pnpm 10+. These two are the only
+# dependencies that legitimately need one, so they are approved explicitly
+# here rather than via an interactive `pnpm approve-builds` prompt:
+#
+#   esbuild        downloads/links its platform binary (used by vitest, drizzle-kit)
+#   unrs-resolver  native resolver binary (used by eslint-config-next)
+allowBuilds:
+  esbuild: true
+  unrs-resolver: true
