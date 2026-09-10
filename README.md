@@ -175,16 +175,30 @@ ground. I was wrong** — it classified 40/40 and extracted all four fields with
 
 ## Failure modes
 
-### Self-reported confidence did not separate right from wrong
+### Self-reported confidence carried no information at all
 
-The one extraction error in the pre-fix run came back at confidence **1.00**. In the only
-case where confidence had a job to do, it did not do it.
+Across the full corpus — **761 extracted fields — every single one came back at
+confidence exactly 1.00.** Minimum 1.00, maximum 1.00, zero variance.
 
-This is n=1 and not a conclusion — but it is the reason the confidence threshold routes to
-a *review queue* rather than to an automated rejection. Asking a model how sure it is
-produces a loosely calibrated number, and small models skew overconfident. The honest
-alternative — aggregating per-token logprobs per field — is not usefully exposed by the
-Ollama chat API.
+And the one extraction error the pipeline ever made also came back at 1.00.
+
+So the confidence threshold, the review queue, and the `needs_review` status are all
+built, tested, and wired end to end — and on this model and this corpus the signal that
+drives them is a constant. The review queue renders "nothing pending" not because the
+extractions were verified, but because the model never once expressed a doubt.
+
+This is the project's most uncomfortable result and the one worth publishing. Asking a
+model how sure it is returns a number shaped like evidence, and here it was decoration.
+The honest alternative — aggregating per-token logprobs per field — is not usefully
+exposed by the Ollama chat API.
+
+Two things follow, and the design already assumes both. Low confidence routes to human
+review rather than to automatic rejection, so a miscalibrated number cannot reject a
+valid supplier. And **no requirement is ever decided by confidence alone**: every verdict
+comes from deterministic rules over the extracted values, which is why the dossier
+verdicts are still 40/40 despite the confidence signal being useless.
+
+A hosted model with real logprobs would be the first thing to measure against this.
 
 ### Column gutters were being collapsed, and the model got blamed
 
@@ -208,15 +222,36 @@ Fixed with an instruction that such markings do not determine document type. Wor
 as a general hazard: **safety markings on synthetic eval data can become the thing the
 model keys on.**
 
-### Both models do not fit in 8 GB
+### Both models do not fit in 8 GB, and everything downstream of that
 
-`qwen2.5` (~4.7 GB) and `qwen2.5vl` (~5.4 GB) together exceed the development GPU, and
-alternating them per dossier produced `CUDA error: device not ready` mid-run — while
-Ollama's `/api/ps` still reported the model as resident and `nvidia-smi` disagreed.
+`qwen2.5` (~4.7 GB) and `qwen2.5vl` (~5.4 GB) together exceed the development GPU, so
+something has to be swapped. Three separate failures came out of that one fact.
 
-Fixed by grouping work by model: all text documents, unload, all images. Faster and far
-more reliable. On a backend with room for both, `unload` is a no-op and the ordering costs
-nothing.
+**Alternating per dossier exhausted VRAM.** `CUDA error: device not ready` mid-run, while
+`/api/ps` still reported the model resident and `nvidia-smi` disagreed. Fixed in the eval
+by grouping work by model — all text documents, unload, all images — which is both more
+reliable and faster. On a backend with room for both, `unload` is a no-op and the ordering
+costs nothing.
+
+**The swap thrashed the host, not just the GPU.** Processing folder by folder, as real
+intake would, means two ~5 GB model loads per dossier through a 9.7 GB WSL host. The OS
+killed the loader twice. Grouping by model is the answer at batch scale; a single dossier
+arriving on its own pays the swap once and does not care.
+
+**Losing the GPU entirely was silent.** Restarting Docker Desktop broke WSL's GPU
+passthrough, and Ollama did not error — it fell back to CPU and kept answering. Text extraction merely got slow; the 7B vision model stopped
+finishing inside the 180-second timeout, so **every scanned cédula failed**, `completeness`
+failed with it, and seven dossiers were written as `fail` for a reason that exists nowhere
+in the documents.
+
+Read from the top, the evidence pointed at the model: timeouts, in the extract stage, only
+on the vision path. The tell was elsewhere — `/api/ps` reporting the model resident with
+`size_vram: 0`.
+
+Two lessons, both cheap. A backend that degrades instead of failing will hand you a
+plausible wrong story about your own code. And the fix for the re-run was not a code
+change but a check before it: warm the vision model and assert it landed in VRAM, rather
+than discovering an hour later that it hadn't.
 
 ### Check digits have a known false-negative rate on real data
 
@@ -251,6 +286,11 @@ from the deployment rather than adding a service to carry synthetic data.
 The locator searches a PDF's text layer, so a scanned cédula's fields carry no bounding
 box, and the viewer says so rather than drawing a plausible rectangle. Recovering it needs
 per-word OCR geometry the current vision path does not produce.
+
+Within PDFs the coverage is total: **522 of 522 literal fields located, 100%**. The only
+PDF fields without a region are the 79 `estado` values — an enum classified from prose,
+so there is no printed string to point at, and inventing a box for it would be worse than
+admitting there isn't one.
 
 Asking the model for a bounding box was considered and rejected: it would return a
 confident rectangle whether or not the value is there, and a citation you cannot trust is
