@@ -17,6 +17,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 
 import * as schema from "./schema";
+import { caCertFromEnv, sslConfigFor } from "./ssl";
 
 export const DEFAULT_DATABASE_URL = "postgres://vetting:vetting@localhost:5433/vendor_vetting";
 
@@ -28,8 +29,16 @@ const globalForDb = globalThis as unknown as { __vettingPool?: Pool };
 
 function pool(): Pool {
   if (globalForDb.__vettingPool === undefined) {
+    const url = databaseUrl();
+
     globalForDb.__vettingPool = new Pool({
-      connectionString: databaseUrl(),
+      connectionString: url,
+      // See ./ssl.ts: a managed provider signs with its own root, so this is a
+      // decision rather than a boolean.
+      ssl: sslConfigFor(url, {
+        caCert: caCertFromEnv(),
+        insecure: process.env.DATABASE_SSL_INSECURE === "1",
+      }),
       // The pipeline is sequential and the UI is one reader; a large pool would
       // only make an exhausted-connection bug harder to notice.
       max: 5,
