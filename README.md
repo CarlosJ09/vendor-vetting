@@ -366,17 +366,76 @@ storage, no background workers.
 
 ```bash
 # 1. point at the hosted database and create the schema
-DATABASE_URL='postgres://…' pnpm db:migrate
+DATABASE_URL='postgres://…' DATABASE_CA_CERT=/path/to/root.crt pnpm db:migrate
 
-# 2. seed it from this machine — inference runs locally, only the writes go remote
-DATABASE_URL='postgres://…' pnpm ingest --corpus data/synthetic
+# 2. load the corpus from this machine — inference runs locally, only the writes go remote
+DATABASE_URL='postgres://…' DATABASE_CA_CERT=/path/to/root.crt pnpm ingest --corpus data/synthetic
 ```
 
-Then deploy with `DATABASE_URL` set. Seeding this way avoids a dump-and-restore step: the same
-command that populates a local database populates a remote one, so what is deployed went through
-the identical pipeline.
+Loading it this way avoids a dump-and-restore step: the same command that populates a local
+database populates a remote one, so what is deployed went through the identical pipeline. The
+run against a hosted Postgres reproduced the local numbers exactly — 40 dossiers, 160 documents,
+761 fields, the same 40/40 verdicts, and all 160 stored documents SHA-256 identical to the files
+on disk.
 
 Roughly 5 MB of document bytes end up in Postgres, which fits any managed free tier.
+
+### TLS is not optional and not `rejectUnauthorized: false`
+
+Managed providers often sign their database certificates with a private root — Supabase uses
+"Supabase Root 2021 CA" — which is not in Node's trust store. `ssl: true` therefore fails with
+*self-signed certificate in certificate chain*, and the fix the internet reaches for first is
+`rejectUnauthorized: false`. That is not a smaller version of TLS; it is TLS with the part that
+stops an impostor removed.
+
+So `src/db/ssl.ts` decides this once, and **fails closed**:
+
+| Situation | Result |
+|---|---|
+| local host (`localhost`, `127.0.0.1`, `::1`, `0.0.0.0`) | no TLS — so `pnpm test` needs no certificates |
+| remote **with** a CA certificate | verify |
+| remote **without** one | verify, and fail loudly — never a silent downgrade |
+| `DATABASE_SSL_INSECURE=1` | skip verification, deliberately greppable |
+
+`DATABASE_CA_CERT` takes either the PEM contents or a path, because a serverless platform's
+environment variables are text and not a filesystem. `drizzle.config.ts` imports the same
+function rather than restating it: migrations and queries must not disagree about who they trust.
+
+The certificate has to come from the provider's dashboard — for Supabase, **Settings → Database →
+SSL Configuration**, not the Connect dialog. It cannot be lifted out of the chain the server
+presents, because a root certificate offered by the server you are trying to verify proves
+nothing. Verified the downloaded root actually validates the chain before trusting it:
+
+```bash
+openssl s_client -starttls postgres -connect <host>:5432 \
+  -CAfile root.crt -verify_return_error   # → Verify return code: 0 (ok)
+```
+
+### Notes from deploying this one to Vercel + Supabase
+
+Specific to those two, recorded because each cost time:
+
+- **Supabase's direct database host is IPv6-only.** From a network without IPv6 routing it is
+  `ENETUNREACH`, with nothing to configure. Both poolers are dual-stack, so use a pooler: the
+  **session** pooler (port 5432) for the one-off migrate and corpus load from a laptop, the
+  **transaction** pooler (port 6543) for the serverless app, which opens a connection per
+  invocation. Parameterised queries work fine through transaction mode on `pg`.
+- **A freshly restored Supabase project reports `tenant or user not found`** from the pooler for
+  a few minutes while its REST API already answers. The credentials are not wrong; the pooler
+  has not registered the tenant yet. Retry before changing anything.
+- **Vercel supports pnpm 6–10, not 11**, and only reads `packageManager` when Corepack is
+  enabled. With `lockfileVersion: 9.0` it picks pnpm 9 or 10 on its own, which installs this
+  lockfile cleanly, so leave Corepack off and leave the local pnpm 11 pin alone.
+- Env vars for the deployment: `DATABASE_URL` (transaction pooler) and `DATABASE_CA_CERT` (the
+  PEM pasted in). Nothing else — there is no Ollama in production.
+
+### The free tier pauses
+
+Supabase's free tier suspends a project after a stretch of inactivity, which is the wrong
+failure mode for a portfolio link: a demo nobody visits turns itself off, and then the one
+person who clicks it sees an error. The honest options are to wake it before sharing the link,
+to host on something that does not pause, or to skip the hosted demo and rely on the
+reproduction steps above, which need no account anywhere.
 
 ## Stack
 
