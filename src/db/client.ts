@@ -17,7 +17,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 
 import * as schema from "./schema";
-import { caCertFromEnv, sslConfigFor } from "./ssl";
+import { caCertFromEnv, describeConnection, sslConfigFor } from "./ssl";
 
 export const DEFAULT_DATABASE_URL = "postgres://vetting:vetting@localhost:5433/vendor_vetting";
 
@@ -79,7 +79,27 @@ export async function isReachable(): Promise<boolean> {
     const client = await pool().connect();
     client.release();
     return true;
-  } catch {
+  } catch (error) {
+    /*
+     * A remote failure gets logged; a local one does not. This swallowed its
+     * error once, and a deployment that renders "no database connection" and
+     * nothing else is undiagnosable from outside: a wrong host, an environment
+     * variable that never reached the running deployment, and a certificate
+     * flattened by a dashboard paste all look identical. Local failures stay
+     * quiet because "no Docker" is the documented case and does not need a
+     * stack trace on every test run.
+     */
+    const url = databaseUrl();
+    const inputs = {
+      caCert: caCertFromEnv(),
+      insecure: process.env.DATABASE_SSL_INSECURE === "1",
+    };
+
+    if (sslConfigFor(url, inputs) !== false) {
+      const detail = error instanceof Error ? error.message : String(error);
+      console.error(`Database unreachable — ${describeConnection(url, inputs)} — ${detail}`);
+    }
+
     return false;
   }
 }

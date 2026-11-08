@@ -340,7 +340,7 @@ Flagged rather than buried, per the rule against fabricating official procedure.
 pnpm install
 
 pnpm synth                             # 40 dossiers + ground truth → data/synthetic
-pnpm test                              # 296 tests (15 skip without Postgres)
+pnpm test                              # 303 tests (15 skip without Postgres)
 
 pnpm db:up && pnpm db:migrate          # Postgres 16 in Docker, host port 5433
 pnpm ingest --corpus data/synthetic    # run the pipeline, persist results

@@ -73,3 +73,55 @@ export function caCertFromEnv(env: NodeJS.ProcessEnv = process.env): string | un
     );
   }
 }
+
+/**
+ * Whether a PEM has lost its line breaks.
+ *
+ * A hosting dashboard's environment-variable field sometimes flattens a pasted
+ * certificate onto one line. Node then rejects it with an error that names
+ * neither the variable nor the cause, which is a bad half hour to spend.
+ */
+function pemIsFlattened(pem: string): boolean {
+  return pem.includes("BEGIN CERTIFICATE") && !/-----BEGIN CERTIFICATE-----\s*\n/.test(pem);
+}
+
+/**
+ * A one-line description of what a connection is aiming at, safe to log.
+ *
+ * Deliberately never includes the password: this is written to logs a hosting
+ * provider keeps, and a credential in a log outlives every intention about it.
+ */
+export function describeConnection(url: string, inputs: SslInputs): string {
+  let host = "unparseable";
+  let port = "unparseable";
+  let database = "unparseable";
+
+  try {
+    const parsed = new URL(url);
+    host = parsed.hostname;
+    port = parsed.port === "" ? "5432" : parsed.port;
+    database = parsed.pathname.replace(/^\//, "") || "(none)";
+  } catch {
+    // Keep the placeholders: an unparseable URL is itself the finding, and is
+    // worth reporting rather than throwing from inside an error path.
+  }
+
+  const config = sslConfigFor(url, inputs);
+  const ssl =
+    config === false
+      ? "off"
+      : config.rejectUnauthorized
+        ? config.ca === undefined
+          ? "verify-system-roots"
+          : "verify-with-ca"
+        : "unverified";
+
+  const ca =
+    inputs.caCert === undefined || inputs.caCert === ""
+      ? "absent"
+      : pemIsFlattened(inputs.caCert)
+        ? "flattened"
+        : "present";
+
+  return `host=${host} port=${port} db=${database} ssl=${ssl} ca=${ca}`;
+}

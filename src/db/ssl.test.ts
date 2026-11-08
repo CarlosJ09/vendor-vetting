@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { sslConfigFor } from "./ssl";
+import { describeConnection, sslConfigFor } from "./ssl";
 
 const LOCAL = "postgres://vetting:vetting@localhost:5433/vendor_vetting";
 const REMOTE = "postgres://user:pw@aws-0-us-west-2.pooler.supabase.com:5432/postgres";
@@ -56,5 +56,54 @@ describe("sslConfigFor", () => {
 
   it("never skips verification for a local connection", () => {
     expect(sslConfigFor(LOCAL, { insecure: true })).toBe(false);
+  });
+});
+
+/*
+ * These exist because of a real deployment that showed "no database
+ * connection" and nothing else. The app swallowed the cause, so there was
+ * nothing to act on: a wrong host, an env var that never reached the running
+ * deployment and a certificate flattened by a dashboard paste all looked
+ * identical from outside.
+ */
+describe("describeConnection", () => {
+  it("names the target without ever printing the password", () => {
+    const summary = describeConnection(REMOTE, { caCert: CA });
+
+    expect(summary).toContain("host=aws-0-us-west-2.pooler.supabase.com");
+    expect(summary).toContain("port=5432");
+    expect(summary).toContain("db=postgres");
+    expect(summary).not.toContain("pw");
+  });
+
+  it("reports that a CA is present without printing it", () => {
+    const summary = describeConnection(REMOTE, { caCert: CA });
+
+    expect(summary).toContain("ca=present");
+    expect(summary).not.toContain("MIIfake");
+  });
+
+  it("distinguishes a missing CA from a supplied one", () => {
+    expect(describeConnection(REMOTE, {})).toContain("ca=absent");
+  });
+
+  it("flags a certificate that lost its line breaks", () => {
+    // What a dashboard's single-line env var field does to a pasted PEM. Node
+    // rejects it with an error naming neither the variable nor the cause.
+    const flattened = CA.replace(/\n/g, " ");
+
+    expect(describeConnection(REMOTE, { caCert: flattened })).toContain("ca=flattened");
+  });
+
+  it("says when verification is switched off", () => {
+    expect(describeConnection(REMOTE, { insecure: true })).toContain("ssl=unverified");
+  });
+
+  it("says when there is no TLS at all", () => {
+    expect(describeConnection(LOCAL, {})).toContain("ssl=off");
+  });
+
+  it("does not throw on a URL it cannot parse", () => {
+    expect(() => describeConnection("not a url", {})).not.toThrow();
   });
 });
