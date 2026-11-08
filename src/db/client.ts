@@ -90,8 +90,16 @@ export async function isReachable(): Promise<boolean> {
      * stack trace on every test run.
      */
     const url = databaseUrl();
+
+    /*
+     * The raw variable, not caCertFromEnv(). An unusable certificate is one
+     * of the things that lands here, and calling the reader again would throw
+     * a second time — out of the probe and into a 500 that says nothing.
+     * describeConnection's job is to classify what is configured, including
+     * when what is configured is wrong.
+     */
     const inputs = {
-      caCert: caCertFromEnv(),
+      caCert: process.env.DATABASE_CA_CERT,
       insecure: process.env.DATABASE_SSL_INSECURE === "1",
     };
 

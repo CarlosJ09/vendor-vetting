@@ -340,7 +340,7 @@ Flagged rather than buried, per the rule against fabricating official procedure.
 pnpm install
 
 pnpm synth                             # 40 dossiers + ground truth → data/synthetic
-pnpm test                              # 303 tests (15 skip without Postgres)
+pnpm test                              # 311 tests (15 skip without Postgres)
 
 pnpm db:up && pnpm db:migrate          # Postgres 16 in Docker, host port 5433
 pnpm ingest --corpus data/synthetic    # run the pipeline, persist results
@@ -431,6 +431,11 @@ Specific to those two, recorded because each cost time:
   lockfile cleanly, so leave Corepack off and leave the local pnpm 11 pin alone.
 - Env vars for the deployment: `DATABASE_URL` (transaction pooler) and `DATABASE_CA_CERT` (the
   PEM pasted in). Nothing else — there is no Ollama in production.
+- **Paste the certificate with its `-----BEGIN CERTIFICATE-----` and `-----END CERTIFICATE-----`
+  lines.** Pasting only the base64 between them is the easiest mistake to make and the hardest
+  to see: the value looks like a certificate, and the first deployment of this project failed
+  on exactly that. `src/db/ssl.ts` now names that case specifically instead of reporting it as
+  an unreadable file path.
 
 ### The free tier pauses
 

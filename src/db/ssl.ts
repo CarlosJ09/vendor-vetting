@@ -64,14 +64,50 @@ export function caCertFromEnv(env: NodeJS.ProcessEnv = process.env): string | un
   if (value === undefined || value === "") return undefined;
   if (value.includes("BEGIN CERTIFICATE")) return value;
 
+  /*
+   * A certificate's base64 body with its BEGIN/END lines missing — what you
+   * get by selecting the middle of a PEM, or by pasting into a field that
+   * strips them. Worth its own message: treating it as a path sends the
+   * reader looking for a file that was never meant to exist.
+   *
+   * Not repaired automatically. Re-wrapping it would also quietly accept a
+   * paste that was cut short, turning a clear configuration error into a TLS
+   * handshake failure further away from its cause.
+   */
+  if (looksLikeCertificateBody(value)) {
+    throw new Error(
+      "DATABASE_CA_CERT looks like a certificate body with its armour missing. " +
+        "Include the -----BEGIN CERTIFICATE----- and -----END CERTIFICATE----- " +
+        "lines, and the line breaks between them.",
+    );
+  }
+
   try {
     return readFileSync(value, "utf8");
   } catch {
+    // Truncated: this message reaches a hosting provider's logs on every
+    // request, and a stray paste can be thousands of characters long.
     throw new Error(
-      `DATABASE_CA_CERT points at ${value}, which could not be read. ` +
+      `DATABASE_CA_CERT points at ${abbreviate(value)}, which could not be read. ` +
         "Give it either the certificate's PEM contents or a readable path.",
     );
   }
+}
+
+/** Shorten a value for an error message that will be written to logs. */
+function abbreviate(value: string, max = 60): string {
+  return value.length <= max ? value : `${value.slice(0, max)}… (${value.length} chars)`;
+}
+
+/**
+ * Whether a value is a certificate's base64 body stripped of its PEM armour.
+ *
+ * Long, and base64 and nothing else. A filesystem path fails this on the
+ * slashes and dots it needs to be a path at all.
+ */
+function looksLikeCertificateBody(value: string): boolean {
+  const compact = value.replace(/\s+/g, "");
+  return compact.length > 100 && /^[A-Za-z0-9+/]+={0,2}$/.test(compact);
 }
 
 /**
@@ -116,12 +152,15 @@ export function describeConnection(url: string, inputs: SslInputs): string {
           : "verify-with-ca"
         : "unverified";
 
-  const ca =
-    inputs.caCert === undefined || inputs.caCert === ""
-      ? "absent"
-      : pemIsFlattened(inputs.caCert)
-        ? "flattened"
-        : "present";
+  const ca = classifyCaCert(inputs.caCert);
 
   return `host=${host} port=${port} db=${database} ssl=${ssl} ca=${ca}`;
+}
+
+/** How the configured CA value looks, for a log line that has to be actionable. */
+function classifyCaCert(value: string | undefined): string {
+  if (value === undefined || value === "") return "absent";
+  if (value.includes("BEGIN CERTIFICATE")) return pemIsFlattened(value) ? "flattened" : "present";
+  if (looksLikeCertificateBody(value)) return "unarmored";
+  return "path";
 }

@@ -8,12 +8,16 @@
 
 import { describe, expect, it } from "vitest";
 
-import { describeConnection, sslConfigFor } from "./ssl";
+import { caCertFromEnv, describeConnection, sslConfigFor } from "./ssl";
 
 const LOCAL = "postgres://vetting:vetting@localhost:5433/vendor_vetting";
 const REMOTE = "postgres://user:pw@aws-0-us-west-2.pooler.supabase.com:5432/postgres";
 
 const CA = "-----BEGIN CERTIFICATE-----\nMIIfake\n-----END CERTIFICATE-----";
+
+/* A base64 body of realistic length — a real certificate runs ~1300 characters. */
+const CA_BODY = "MIIDxDCCAqygAwIBAgIUbLxMod62P2kt".repeat(8);
+const CA_UNARMORED = `-----BEGIN CERTIFICATE-----\n${CA_BODY}\n-----END CERTIFICATE-----`;
 
 describe("sslConfigFor", () => {
   it("uses no TLS for a local database", () => {
@@ -105,5 +109,65 @@ describe("describeConnection", () => {
 
   it("does not throw on a URL it cannot parse", () => {
     expect(() => describeConnection("not a url", {})).not.toThrow();
+  });
+});
+
+/*
+ * These come from a deployment that failed with:
+ *
+ *   Error: DATABASE_CA_CERT points at MIIDxDCCAqygAwIBAgIUbLxMod62P2kt…
+ *
+ * The variable held the certificate's base64 body with its BEGIN/END lines
+ * missing — what you get by selecting the middle of a PEM, or by pasting into
+ * a field that strips them. Two things were wrong with that: the message
+ * blamed a path, which sent the reader looking for a file that was never
+ * meant to exist, and it echoed thirteen hundred characters of base64 into a
+ * hosting provider's logs on every single request.
+ */
+describe("caCertFromEnv", () => {
+  it("returns undefined when the variable is unset or empty", () => {
+    expect(caCertFromEnv({} as unknown as NodeJS.ProcessEnv)).toBeUndefined();
+    expect(caCertFromEnv({ DATABASE_CA_CERT: "" } as unknown as NodeJS.ProcessEnv)).toBeUndefined();
+  });
+
+  it("passes an inline PEM straight through", () => {
+    expect(caCertFromEnv({ DATABASE_CA_CERT: CA } as unknown as NodeJS.ProcessEnv)).toBe(CA);
+  });
+
+  it("names the missing BEGIN/END lines when given a bare certificate body", () => {
+    const body = CA_UNARMORED.replace(/-----[A-Z ]+-----/g, "").trim();
+
+    expect(() => caCertFromEnv({ DATABASE_CA_CERT: body } as unknown as NodeJS.ProcessEnv)).toThrow(
+      /BEGIN CERTIFICATE/,
+    );
+    // And must not send the reader hunting for a file.
+    expect(() => caCertFromEnv({ DATABASE_CA_CERT: body } as unknown as NodeJS.ProcessEnv)).not.toThrow(
+      /points at/,
+    );
+  });
+
+  it("never echoes the whole value into the error", () => {
+    const body = "A".repeat(2000);
+
+    try {
+      caCertFromEnv({ DATABASE_CA_CERT: body } as unknown as NodeJS.ProcessEnv);
+      expect.unreachable("should have thrown");
+    } catch (error) {
+      expect((error as Error).message.length).toBeLessThan(400);
+    }
+  });
+
+  it("still reports an unreadable path as a path", () => {
+    expect(() =>
+      caCertFromEnv({ DATABASE_CA_CERT: "/no/such/cert.crt" } as unknown as NodeJS.ProcessEnv),
+    ).toThrow(/\/no\/such\/cert\.crt/);
+  });
+});
+
+describe("describeConnection with a mangled certificate", () => {
+  it("distinguishes a body stripped of its BEGIN/END lines", () => {
+    const body = CA_UNARMORED.replace(/-----[A-Z ]+-----/g, "").trim();
+
+    expect(describeConnection(REMOTE, { caCert: body })).toContain("ca=unarmored");
   });
 });
