@@ -340,7 +340,7 @@ Flagged rather than buried, per the rule against fabricating official procedure.
 pnpm install
 
 pnpm synth                             # 40 dossiers + ground truth → data/synthetic
-pnpm test                              # 289 tests (15 skip without Postgres)
+pnpm test                              # 296 tests (15 skip without Postgres)
 
 pnpm db:up && pnpm db:migrate          # Postgres 16 in Docker, host port 5433
 pnpm ingest --corpus data/synthetic    # run the pipeline, persist results
@@ -420,9 +420,12 @@ Specific to those two, recorded because each cost time:
   **session** pooler (port 5432) for the one-off migrate and corpus load from a laptop, the
   **transaction** pooler (port 6543) for the serverless app, which opens a connection per
   invocation. Parameterised queries work fine through transaction mode on `pg`.
-- **A freshly restored Supabase project reports `tenant or user not found`** from the pooler for
-  a few minutes while its REST API already answers. The credentials are not wrong; the pooler
-  has not registered the tenant yet. Retry before changing anything.
+- **A paused or still-restoring Supabase project reports `tenant or user not found`** from the
+  pooler — the same message a wrong password would produce, which sends you looking in the wrong
+  place. The credentials are fine. The quick way to tell the two apart is DNS: when the project
+  is paused, `<ref>.supabase.co` stops resolving altogether, while the pooler host keeps
+  resolving and accepting TCP because it is shared infrastructure. If the subdomain does not
+  resolve, nothing about the connection string is the problem.
 - **Vercel supports pnpm 6–10, not 11**, and only reads `packageManager` when Corepack is
   enabled. With `lockfileVersion: 9.0` it picks pnpm 9 or 10 on its own, which installs this
   lockfile cleanly, so leave Corepack off and leave the local pnpm 11 pin alone.
