@@ -260,10 +260,15 @@ Work straight down the list; ship as fast as correctness allows.
 - [x] Review queue driven by the confidence threshold
 - [x] Dossier view with evidence links to page and region
 - [x] README (§11)
+- [x] Deployed demo with the corpus pre-loaded — https://vendor-vetting.vercel.app
+      (Vercel + Supabase; verified against ground truth in production: 40/40 verdicts,
+      0 false passes, all documents byte-identical to the files on disk)
 
-**Next, in order**
+**Nothing next. §10 is finished — ship it, publish it, move on (§1).**
 
-1. **Deployed demo** with sample dossiers pre-loaded. Then stop.
+The demo runs on a free tier that suspends the database after a stretch of inactivity, so
+the link needs waking from the Supabase dashboard before it is shared. That is a property
+of the hosting, not a task: the README reproduces everything with no account anywhere.
 
 Open questions, carried rather than closed:
 
